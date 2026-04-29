@@ -37,12 +37,12 @@ class TestSimilarityComputation:
 
 
 class TestRagEndpoint:
-    """Test the /rag endpoint."""
+    """Test the /analyze endpoint."""
     
     def test_rag_endpoint_basic_query(self):
         """Test basic RAG endpoint functionality."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I have already taken 01002. Which of these courses would overlap the most: 01003, 01018, 01017?"}
         )
         assert response.status_code == 200
@@ -61,7 +61,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_ranking_structure(self):
         """Test that ranking items have correct structure."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I completed 01002. Compare 01003 and 01018."}
         )
         assert response.status_code == 200
@@ -81,7 +81,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_ranking_sorted(self):
         """Test that ranking is sorted by similarity in descending order."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I completed 01002. Compare 01003 and 01018."}
         )
         assert response.status_code == 200
@@ -94,7 +94,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_recommendations(self):
         """Test that recommendations are based on similarity thresholds."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I completed 01002. Compare 01003, 01018, and 01017."}
         )
         assert response.status_code == 200
@@ -111,7 +111,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_empty_question(self):
         """Test RAG endpoint with empty question."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": ""}
         )
         assert response.status_code == 200
@@ -123,7 +123,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_invalid_json(self):
         """Test RAG endpoint with invalid JSON."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"invalid_field": "test"}
         )
         assert response.status_code == 422  # Unprocessable Entity
@@ -131,7 +131,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_hello_query(self):
         """Test RAG endpoint with 'Hello' query returns empty lists."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "Hello"}
         )
         assert response.status_code == 200
@@ -145,7 +145,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_01002_01003_query(self):
         """Test RAG endpoint with specific course comparison query."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I did 01002, I want to take 01003. Should I?"}
         )
         assert response.status_code == 200
@@ -172,7 +172,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_invalid_course(self):
         """Test RAG endpoint with non-existent course code."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I did INVALID123, I want to take 01003. Should I?"}
         )
         assert response.status_code == 200
@@ -186,7 +186,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_multiple_invalid_courses(self):
         """Test RAG endpoint with multiple non-existent course codes."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I did INVALID1, INVALID2 and INVALID3, I want to take 01003. Should I?"}
         )
         assert response.status_code == 200
@@ -202,7 +202,7 @@ class TestRagEndpoint:
     def test_rag_endpoint_not_applicable_together(self):
         """Test RAG endpoint detects courses not applicable together."""
         response = client.post(
-            "/rag",
+            "/analyze",
             json={"question": "I did 01003, I want to take 01915. Should I?"}
         )
         assert response.status_code == 200

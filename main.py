@@ -38,8 +38,8 @@ def compute_similarity(course1_id, course2_id):
     tfidf_matrix = vectorizer.fit_transform([text1, text2])
     return cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
 
-@app.post("/rag")
-def rag_endpoint(query: Query):
+@app.post("/analyze")
+def analyze_endpoint(query: Query):
     sys_prompt = "Extract the completed courses and the list of courses to compare from the following user query. Output ONLY a JSON object with two keys: 'completed_courses' (list of course codes) and 'compared_courses' (list of course codes). For example: {\"completed_courses\": [\"12345\"], \"compared_courses\": [\"67890\"]}"
     
     response = client.chat.completions.create(
