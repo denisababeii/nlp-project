@@ -74,7 +74,7 @@ async def post_to_backend(request: AnalyzeRequest) -> tuple[dict[str, Any], floa
             status_code=502,
             detail=(
                 "The frontend could not reach the backend. Check the backend URL, "
-                "port number, and whether uvicorn is running."
+                "port number and whether uvicorn is running."
             ),
         ) from exc
 
@@ -756,7 +756,7 @@ async def api_health(backend_url: str = DEFAULT_BACKEND_URL) -> JSONResponse:
             response = await client.get(url)
         response.raise_for_status()
         return JSONResponse({"ok": True, "backend": response.json()})
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return JSONResponse(
             {"ok": False, "error": f"Could not reach backend health endpoint: {exc}"},
             status_code=502,
