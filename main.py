@@ -34,18 +34,16 @@ courses_dict: Dict[str, Dict[str, Any]] = {
     if c.get("course_code")
 }
 
-
 class Query(BaseModel):
     question: str
 
-
-def normalize_course_code(code: Any) -> str:
-    """Normalize user/model course-code output to match database keys."""
+## HELPERS
+# Normalize user/model course code output to match database keys.
+def normalize_course_code(code):
     return str(code).strip().upper()
 
-
+# Keep only unique course codes and normalize them to match keys.
 def normalize_course_codes(codes: List[Any]) -> List[str]:
-    """Keep only unique course codes while preserving order."""
     normalized: List[str] = []
     for code in codes:
         code = normalize_course_code(code)
@@ -53,50 +51,40 @@ def normalize_course_codes(codes: List[Any]) -> List[str]:
             normalized.append(code)
     return normalized
 
-
+# Find course codes matching the Regex COURSE_CODE_PATTERN.
 def extract_course_codes_from_text(text: str) -> List[str]:
-    """Find explicit course codes in free text."""
     return normalize_course_codes(re.findall(COURSE_CODE_PATTERN, text or ""))
 
-
+# Return only the learning objectives as plain text.
 def get_learning_objectives_text(course: Dict[str, Any]) -> str:
-    """Return only the learning objectives as plain text."""
     learning_objectives = course.get("learning_objectives", []) or []
     if isinstance(learning_objectives, list):
         return "\n".join(str(item) for item in learning_objectives if str(item).strip())
     return str(learning_objectives)
 
-
+# Return academic prerequisites when present; otherwise an empty string.
 def get_academic_prerequisites_text(course: Dict[str, Any]) -> str:
-    """Return Academic prerequisites when present; otherwise an empty string."""
     fields = course.get("fields", {}) or {}
     return str(fields.get("Academic prerequisites", "") or "").strip()
 
 
+# Text used for similarity and RAG retrieval.
+# Similarity is based on:
+# - learning_objectives
+# - fields['Academic prerequisites'] when that field exists
 def get_similarity_text(course: Dict[str, Any]) -> str:
-    """
-    Text used for similarity and RAG retrieval.
-
-    Per the requested behavior, similarity is based only on:
-    - learning_objectives
-    - fields['Academic prerequisites'] when that field exists
-    """
     parts = [
         get_learning_objectives_text(course),
         get_academic_prerequisites_text(course),
     ]
     return "\n".join(part for part in parts if part.strip())
 
-
+# Text shown to the LLM for comparison.
+# The comparison is centered on the same fields used for
+# similarity: learning objectives and academic prerequisites. A small amount of
+# metadata is included so the model can identify the course and mention
+# conflicts when relevant.
 def get_rag_context_text(course: Dict[str, Any]) -> str:
-    """
-    Text shown to the LLM for grounded comparison.
-
-    The comparison evidence is intentionally centered on the same fields used for
-    similarity: learning objectives and academic prerequisites. A small amount of
-    metadata is included so the model can identify the course and mention hard
-    conflicts when relevant.
-    """
     fields = course.get("fields", {}) or {}
     context = {
         "course_code": normalize_course_code(course.get("course_code", "")),
@@ -107,9 +95,8 @@ def get_rag_context_text(course: Dict[str, Any]) -> str:
     }
     return json.dumps(context, ensure_ascii=False, indent=2)
 
-
 # -----------------------------------------------------------------------------
-# RAG index: use only learning objectives + Academic prerequisites for similarity.
+# RAG index: use learning objectives + Academic prerequisites for similarity.
 # -----------------------------------------------------------------------------
 course_codes = list(courses_dict.keys())
 similarity_documents = [get_similarity_text(courses_dict[code]) for code in course_codes]
@@ -124,14 +111,13 @@ else:
     rag_matrix = rag_vectorizer.fit_transform([code for code in course_codes])
 
 
+# Text shown to the LLM for comparison.
+# The comparison is centered on the same fields used for
+# similarity: learning objectives and academic prerequisites. A small amount of
+# metadata is included so the model can identify the course and mention
+# conflicts when relevant.
 def retrieve_relevant_courses(question: str, top_k: int = 12, required_course_codes: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-    """
-    Retrieve relevant courses using similarity over learning objectives and
-    Academic prerequisites only.
 
-    Exact course codes mentioned by the user/model are force-included, so the
-    RAG comparison always sees the courses it is supposed to compare.
-    """
     required = normalize_course_codes(required_course_codes or [])
     exact_codes = [code for code in extract_course_codes_from_text(question) if code in courses_dict]
 
@@ -167,17 +153,15 @@ def retrieve_relevant_courses(question: str, top_k: int = 12, required_course_co
         )
     return retrieved
 
-
+# Compress retrieved courses into context that can be passed to the LLM.
 def format_courses_for_context(courses: List[Dict[str, Any]]) -> str:
-    """Compress retrieved courses into context that can be passed to the LLM."""
     blocks = []
     for i, course in enumerate(courses, start=1):
         blocks.append(f"[Source {i}]\n{course['context']}")
     return "\n\n---\n\n".join(blocks)
 
-
+# Simple approach used by /analyze.
 def ask_llm_for_course_lists(question: str) -> Dict[str, List[str]]:
-    """Original extraction approach used by /analyze."""
     sys_prompt = (
         "Extract the completed courses and the list of courses to compare from "
         "the following user query. Output ONLY a JSON object with two keys: "
@@ -205,9 +189,8 @@ def ask_llm_for_course_lists(question: str) -> Dict[str, List[str]]:
         "compared_courses": normalize_course_codes(data.get("compared_courses", []) or []),
     }
 
-
+# RAG extraction: retrieve relevant catalogue entries, then ask the LLM.
 def ask_llm_for_course_lists_with_rag(question: str, retrieved_courses: List[Dict[str, Any]]) -> Dict[str, List[str]]:
-    """RAG extraction: retrieve relevant catalogue entries, then ask the LLM."""
     context = format_courses_for_context(retrieved_courses)
     sys_prompt = (
         "You extract course codes from a user's question using ONLY the retrieved "
@@ -239,11 +222,8 @@ def ask_llm_for_course_lists_with_rag(question: str, retrieved_courses: List[Dic
         "compared_courses": normalize_course_codes(data.get("compared_courses", []) or []),
     }
 
-
+# Compute overlap using learning objectives and academic prerequisites.
 def compute_similarity(course1_id: str, course2_id: str) -> float:
-    """
-    Compute overlap using only learning objectives + Academic prerequisites.
-    """
     course1_id = normalize_course_code(course1_id)
     course2_id = normalize_course_code(course2_id)
 
@@ -260,7 +240,7 @@ def compute_similarity(course1_id: str, course2_id: str) -> float:
     tfidf_matrix = vectorizer.fit_transform([text1, text2])
     return float(cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0])
 
-
+# Check if provided courses are present in the database
 def validate_courses(completed_courses: List[str], compared_courses: List[str]) -> Optional[Dict[str, Any]]:
     invalid_courses = []
     for course_code in completed_courses + compared_courses:
@@ -275,14 +255,12 @@ def validate_courses(completed_courses: List[str], compared_courses: List[str]) 
 
     return None
 
-
+# Parse DTU's 'Not applicable together with' field.
 def parse_conflicting_codes(not_applicable: str) -> List[str]:
-    """Parse DTU's 'Not applicable together with' field robustly."""
     return extract_course_codes_from_text(not_applicable or "")
 
-
+# Check completed courses against compared courses.
 def check_not_applicable_conflicts(completed_courses: List[str], compared_courses: List[str]) -> Optional[Dict[str, Any]]:
-    # Check completed courses against compared courses.
     for completed_course in completed_courses:
         fields = courses_dict.get(completed_course, {}).get("fields", {}) or {}
         conflicting_codes = parse_conflicting_codes(fields.get("Not applicable together with", ""))
@@ -306,7 +284,7 @@ def check_not_applicable_conflicts(completed_courses: List[str], compared_course
 
     return None
 
-
+# Retrun recommendation text form the computed similarity.
 def recommendation_from_similarity(similarity: float) -> str:
     rec = "Low overlap — safe to take alongside."
     if similarity > 0.6:
@@ -315,7 +293,7 @@ def recommendation_from_similarity(similarity: float) -> str:
         rec = "Moderate overlap — complementary but some shared content."
     return rec
 
-
+# Retrun overlap level form the computed similarity.
 def overlap_level_from_similarity(similarity: float) -> str:
     if similarity > 0.6:
         return "high"
@@ -323,7 +301,7 @@ def overlap_level_from_similarity(similarity: float) -> str:
         return "moderate"
     return "low"
 
-
+# Compute ranking of courses to compare
 def build_ranking(completed_courses: List[str], compared_courses: List[str]) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     base_course = completed_courses[0] if completed_courses else ""
@@ -344,6 +322,10 @@ def build_ranking(completed_courses: List[str], compared_courses: List[str]) -> 
     return results
 
 
+# RAG generation step for the comparison.
+# The LLM receives the source context and the deterministic similarity
+# scores. It should explain the comparison based on learning objectives and
+# academic prerequisites, not unrelated fields.
 def ask_llm_for_rag_comparison(
     question: str,
     completed_courses: List[str],
@@ -351,13 +333,6 @@ def ask_llm_for_rag_comparison(
     retrieved_courses: List[Dict[str, Any]],
     deterministic_ranking: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """
-    RAG generation step for the actual comparison.
-
-    The LLM receives retrieved source context and the deterministic similarity
-    scores. It should explain the comparison based on learning objectives and
-    Academic prerequisites, not unrelated fields.
-    """
     context = format_courses_for_context(retrieved_courses)
     sys_prompt = """
 You are a course advisor using Retrieval-Augmented Generation.
@@ -440,7 +415,7 @@ Retrieved course sources:
         "ranking": final_ranking,
     }
 
-
+# Analyze courses for the simple endpoint
 def analyze_courses(
     completed_courses: List[str],
     compared_courses: List[str],
@@ -468,7 +443,20 @@ def analyze_courses(
 
     return response
 
+# Simple overlap analysis.
+# 1. An LLM extracts two lists from the user question:
+#    - `completed_courses`
+#    - `compared_courses`
+# 2. Course codes are normalized.
+# 3. The API validates that all course codes exist in the course database.
+# 4. It checks conflicts from the `Not applicable together with` course field.
+# 5. It computes TF-IDF cosine similarity between the completed course and each compared course.
+# 6. It returns a ranked list sorted by similarity.
 
+# Similarity is calculated using only:
+
+# - `learning_objectives`
+# - `fields["Academic prerequisites"]`, when available
 @app.post("/analyze")
 def analyze_endpoint(query: Query):
     extracted = ask_llm_for_course_lists(query.question)
@@ -477,18 +465,14 @@ def analyze_endpoint(query: Query):
         extracted["compared_courses"],
     )
 
-
+# RAG version of /analyze.
+# 1. Retrieve relevant course records using learning objectives + academic prerequisites.
+# 2. Extract the completed and compared course codes with retrieved context.
+# 3. Force-include the mentioned courses in a second retrieval pass.
+# 4. Compute similarity from learning objectives + academic prerequisites.
+# 5. Ask the LLM to explain the comparison using only retrieved RAG context.
 @app.post("/analyze-rag")
 def analyze_rag_endpoint(query: Query):
-    """
-    RAG version of /analyze.
-
-    1. Retrieve relevant course records using learning objectives + Academic prerequisites.
-    2. Extract the completed and compared course codes with retrieved context.
-    3. Force-include the mentioned courses in a second retrieval pass.
-    4. Compute similarity from learning objectives + Academic prerequisites.
-    5. Ask the LLM to explain the comparison using only retrieved RAG context.
-    """
     initial_retrieved = retrieve_relevant_courses(query.question, top_k=12)
     extracted = ask_llm_for_course_lists_with_rag(query.question, initial_retrieved)
 
@@ -554,5 +538,4 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("main_with_rag:app", host="0.0.0.0", port=8001)

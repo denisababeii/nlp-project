@@ -97,7 +97,7 @@ The UI has two modes:
 
 | Mode | Backend endpoint | Description |
 |---|---|---|
-| Simple | `POST /analyze` | Extracts course codes from the question and returns a deterministic overlap ranking. |
+| Simple | `POST /analyze` | Extracts course codes from the question and returns an overlap ranking. |
 | Advanced (RAG) | `POST /analyze-rag` | Retrieves relevant course context first, then uses the LLM to produce a more explanatory answer with evidence. |
 
 The frontend itself exposes:
@@ -140,15 +140,12 @@ The backend expects JSON requests with a single `question` field:
 ### `POST /analyze`
 
 Simple overlap analysis.
-
-Under the hood:
-
 1. An LLM extracts two lists from the user question:
    - `completed_courses`
    - `compared_courses`
 2. Course codes are normalized.
 3. The API validates that all course codes exist in the course database.
-4. It checks hard conflicts from the `Not applicable together with` course field.
+4. It checks conflicts from the `Not applicable together with` course field.
 5. It computes TF-IDF cosine similarity between the completed course and each compared course.
 6. It returns a ranked list sorted by similarity.
 
@@ -177,20 +174,17 @@ Example response:
 
 ### `POST /analyze-rag`
 
-RAG-enhanced overlap analysis.
-
-Under the hood:
-
+RAG overlap analysis.
 1. The API retrieves relevant courses using TF-IDF over learning objectives and academic prerequisites.
-2. The LLM extracts completed and compared course codes using only the retrieved catalogue context.
-3. Mentioned or extracted course codes are force-included in a second retrieval pass.
+2. The LLM extracts completed and compared course codes using only the retrieved context.
+3. Mentioned or extracted course codes are included in a second retrieval pass.
 4. The deterministic TF-IDF similarity ranking is computed.
 5. The LLM receives:
    - retrieved course context
    - completed courses
    - compared courses
    - deterministic similarity scores
-6. The LLM generates an explanatory answer and evidence while keeping the deterministic similarity score as the source of truth.
+6. The LLM generates an explanatory answer and evidence while keeping the deterministic similarity score as the source.
 
 Example response fields:
 
@@ -289,40 +283,26 @@ Run the full test suite:
 uv run pytest -v
 ```
 
-Run only the simple `/analyze` endpoint tests:
+Run only the `/analyze` endpoint tests:
 
 ```bash
 uv run pytest test_analyze_endpoint.py -v
 ```
 
-Run only the advanced `/analyze-rag` endpoint tests:
+Run only the `/analyze-rag` endpoint tests:
 
 ```bash
 uv run pytest test_rag_endpoint.py -v
 ```
 
-Run a single test class:
-
-```bash
-uv run pytest test_analyze_endpoint.py::TestRagEndpoint -v
-```
-
-Run a single test:
-
-```bash
-uv run pytest test_rag_endpoint.py::TestAnalyzeRagEndpoint::test_rag_endpoint_basic_query -v
-```
-
-The tests check, among other things:
+The tests check:
 
 - similarity scores are between `0.0` and `1.0`
 - identical courses have high similarity
 - invalid courses return an error
 - rankings are sorted by descending similarity
 - recommendation thresholds behave as expected
-- `/analyze-rag` returns RAG-specific fields such as `answer`, `sources`, and `rag`
-
-If tests fail because of environment variables, check that `.env` exists and contains your CampusAI configuration. If tests fail because course data is missing, check that `COURSES_PATH` points to the correct JSONL file.
+- `/analyze-rag` returns RAG-specific fields such as `answer`, `sources`, and `rag` s
 
 ---
 
@@ -333,7 +313,7 @@ Simple endpoint:
 ```bash
 curl -X POST http://127.0.0.1:8001/analyze \
   -H "Content-Type: application/json" \
-  -d '{"question": "I completed 01002. Compare 01003 and 01018."}'
+  -d '{"question": "I completed 01002. Compare 01003 and 01017."}'
 ```
 
 Advanced RAG endpoint:
@@ -341,7 +321,7 @@ Advanced RAG endpoint:
 ```bash
 curl -X POST http://127.0.0.1:8001/analyze-rag \
   -H "Content-Type: application/json" \
-  -d '{"question": "I completed 01002. Compare 01003 and 01018."}'
+  -d '{"question": "I completed 01002. Compare 01003 and 01017."}'
 ```
 
 Health check:
@@ -352,61 +332,18 @@ curl http://127.0.0.1:8001/health
 
 ---
 
-## 11. Troubleshooting
-
-### The frontend says it cannot reach the backend
-
-Check that the backend is running on port `8001`.
-
-```bash
-curl http://127.0.0.1:8001/health
-```
-
-### The API returns empty course lists
-
-Make sure your question contains recognizable course codes, for example:
-
-```text
-I completed 01002. Should I take 01003?
-```
-
-### A course is reported as not in the database
-
-Check that the course exists in the JSONL file configured by `COURSES_PATH`.
-
-### The LLM extraction fails
-
-Check:
-
-- `CAMPUSAI_API_KEY`
-- `CAMPUSAI_API_URL`
-- `CAMPUSAI_MODEL`
-
-### Docker starts but the UI does not load
-
-Check logs:
-
-```bash
-docker compose logs -f
-```
-
-Make sure ports `8000` and `8001` are not already in use.
-
----
-
-## 12. Project structure
+## 11. Project structure
 
 ```text
 .
 ├── main.py                    # Backend API
 ├── ui.py                      # FastAPI frontend
-├── dtu_courses.jsonl          # Course catalogue data
+├── dtu_courses.jsonl          # Course data
 ├── .env_template              # Environment variable template
-├── .env                       # Local secrets; should not be committed
 ├── Dockerfile                 # Docker image
 ├── docker-compose.yml         # Docker Compose setup
 ├── pyproject.toml             # Dependencies and project metadata
-├── uv.lock                    # Locked dependency versions
+├── uv.lock                    # Dependency versions
 ├── test_analyze_endpoint.py   # Tests for /analyze
 └── test_rag_endpoint.py       # Tests for /analyze-rag
 ```
