@@ -525,7 +525,7 @@ async def index() -> str:
       </p>
 
       <form class="composer" onsubmit="submitQuestion(event)">
-        <textarea id="question" placeholder="Example: I have completed 01002. Should I take 01003 or 01004?"></textarea>
+        <textarea id="question" placeholder="Example: I have completed 01002. Should I take 01003 or 01017?"></textarea>
         <div class="composer-footer">
           <div class="endpoint">
             <span class="dot"></span>

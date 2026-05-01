@@ -120,7 +120,7 @@ Example request:
 
 ```json
 {
-  "question": "I have completed 01002. Should I take 01003 or 01004?",
+  "question": "I have completed 01002. Should I take 01003 or 01017?",
   "mode": "advanced",
   "backend_url": "http://127.0.0.1:8001",
   "timeout_seconds": 60
@@ -139,7 +139,7 @@ The backend expects JSON requests with a single `question` field:
 
 ```json
 {
-  "question": "I have completed 01002. Should I take 01003 or 01004?"
+  "question": "I have completed 01002. Should I take 01003 or 01017?"
 }
 ```
 
@@ -168,7 +168,7 @@ Example response:
 ```json
 {
   "completed_courses": ["01002"],
-  "compared_courses": ["01003", "01004"],
+  "compared_courses": ["01003", "01017"],
   "ranking": [
     {
       "course_number": "01003",
