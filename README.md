@@ -36,25 +36,7 @@ Copy the environment template:
 cp .env_template .env
 ```
 
-Open `.env` and add your own CampusAI credentials.
-
-Example:
-
-```env
-CAMPUSAI_API_KEY=your-campusai-api-key-here
-CAMPUSAI_API_URL=https://chat.campusai.compute.dtu.dk/api/v1
-CAMPUSAI_MODEL=Gemma 3 (Chat)
-COURSES_PATH=dtu_courses.jsonl
-```
-
-Optional variables:
-
-```env
-COURSE_OVERLAP_BACKEND_URL=http://127.0.0.1:8001
-COURSE_OVERLAP_TIMEOUT_SECONDS=60
-```
-
-`COURSE_OVERLAP_BACKEND_URL` is used by the frontend proxy. In the provided Docker setup, the default `http://127.0.0.1:8001` works because the frontend and backend run inside the same container.
+Open `.env` and add your own CampusAI API key.
 
 ---
 
@@ -81,18 +63,6 @@ Stop the container:
 
 ```bash
 docker compose down
-```
-
-Run in detached mode:
-
-```bash
-docker compose up --build -d
-```
-
-View logs:
-
-```bash
-docker compose logs -f
 ```
 
 ---
@@ -127,7 +97,7 @@ http://127.0.0.1:8000
 
 ## 5. Frontend
 
-The frontend is intentionally simple and dependency-light. It is implemented as a FastAPI app that serves a single HTML page with inline CSS and vanilla JavaScript.
+The frontend is implemented as a FastAPI app that serves a single HTML page with inline CSS and vanilla JavaScript.
 
 The UI has two modes:
 
