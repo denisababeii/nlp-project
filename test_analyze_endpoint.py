@@ -5,7 +5,7 @@ from main import app, compute_similarity, courses_dict
 
 client = TestClient(app)
 
-# Tests for the RAG. Run with 'uv run pytest test_main.py -v'.
+# Tests for the analyze endpoint. Run with 'uv run pytest test_analyze_endpoint.py -v'.
 
 class TestSimilarityComputation:
     """Test the compute_similarity function."""
@@ -36,11 +36,11 @@ class TestSimilarityComputation:
         assert sim == 0.0, "Invalid course should result in 0 similarity"
 
 
-class TestRagEndpoint:
+class TestEndpoint:
     """Test the /analyze endpoint."""
     
-    def test_rag_endpoint_basic_query(self):
-        """Test basic RAG endpoint functionality."""
+    def test_endpoint_basic_query(self):
+        """Test basic endpoint functionality."""
         response = client.post(
             "/analyze",
             json={"question": "I have already taken 01002. Which of these courses would overlap the most: 01003, 01018, 01017?"}
@@ -58,7 +58,7 @@ class TestRagEndpoint:
         assert isinstance(data["compared_courses"], list)
         assert isinstance(data["ranking"], list)
     
-    def test_rag_endpoint_ranking_structure(self):
+    def tesT_endpoint_ranking_structure(self):
         """Test that ranking items have correct structure."""
         response = client.post(
             "/analyze",
@@ -78,7 +78,7 @@ class TestRagEndpoint:
             assert isinstance(item["recommendation"], str)
             assert 0.0 <= item["similarity"] <= 1.0
     
-    def test_rag_endpoint_ranking_sorted(self):
+    def test_endpoint_ranking_sorted(self):
         """Test that ranking is sorted by similarity in descending order."""
         response = client.post(
             "/analyze",
@@ -91,7 +91,7 @@ class TestRagEndpoint:
             similarities = [item["similarity"] for item in data["ranking"]]
             assert similarities == sorted(similarities, reverse=True), "Ranking should be sorted by similarity descending"
     
-    def test_rag_endpoint_recommendations(self):
+    def test_endpoint_recommendations(self):
         """Test that recommendations are based on similarity thresholds."""
         response = client.post(
             "/analyze",
@@ -108,8 +108,8 @@ class TestRagEndpoint:
             else:
                 assert "Low overlap" in item["recommendation"]
     
-    def test_rag_endpoint_empty_question(self):
-        """Test RAG endpoint with empty question."""
+    def test_endpoint_empty_question(self):
+        """Test endpoint with empty question."""
         response = client.post(
             "/analyze",
             json={"question": ""}
@@ -120,16 +120,16 @@ class TestRagEndpoint:
         assert "compared_courses" in data
         assert "ranking" in data
     
-    def test_rag_endpoint_invalid_json(self):
-        """Test RAG endpoint with invalid JSON."""
+    def test_endpoint_invalid_json(self):
+        """Test endpoint with invalid JSON."""
         response = client.post(
             "/analyze",
             json={"invalid_field": "test"}
         )
         assert response.status_code == 422
     
-    def test_rag_endpoint_hello_query(self):
-        """Test RAG endpoint with 'Hello' query returns empty lists."""
+    def test_endpoint_hello_query(self):
+        """Test endpoint with 'Hello' query returns empty lists."""
         response = client.post(
             "/analyze",
             json={"question": "Hello"}
@@ -142,8 +142,8 @@ class TestRagEndpoint:
         assert data["compared_courses"] == []
         assert data["ranking"] == []
     
-    def test_rag_endpoint_01002_01003_query(self):
-        """Test RAG endpoint with specific course comparison query."""
+    def test_endpoint_01002_01003_query(self):
+        """Test endpoint with specific course comparison query."""
         response = client.post(
             "/analyze",
             json={"question": "I did 01002, I want to take 01003. Should I?"}
@@ -169,8 +169,8 @@ class TestRagEndpoint:
             assert isinstance(item["similarity"], (int, float))
             assert 0.0 <= item["similarity"] <= 1.0
     
-    def test_rag_endpoint_invalid_course(self):
-        """Test RAG endpoint with non-existent course code."""
+    def test_endpoint_invalid_course(self):
+        """Test endpoint with non-existent course code."""
         response = client.post(
             "/analyze",
             json={"question": "I did INVALID123, I want to take 01003. Should I?"}
@@ -183,8 +183,8 @@ class TestRagEndpoint:
         assert "is not in the database!" in data["error"]
         assert "INVALID123" in data["error"]
     
-    def test_rag_endpoint_multiple_invalid_courses(self):
-        """Test RAG endpoint with multiple non-existent course codes."""
+    def test_endpoint_multiple_invalid_courses(self):
+        """Test endpoint with multiple non-existent course codes."""
         response = client.post(
             "/analyze",
             json={"question": "I did INVALID1, INVALID2 and INVALID3, I want to take 01003. Should I?"}
@@ -199,8 +199,8 @@ class TestRagEndpoint:
         assert "INVALID2" in data["error"]
         assert "INVALID3" in data["error"]
     
-    def test_rag_endpoint_not_applicable_together(self):
-        """Test RAG endpoint detects courses not applicable together."""
+    def test_endpoint_not_applicable_together(self):
+        """Test endpoint detects courses not applicable together."""
         response = client.post(
             "/analyze",
             json={"question": "I did 01003, I want to take 01915. Should I?"}

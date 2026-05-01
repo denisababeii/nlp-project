@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from main import app, compute_similarity, courses_dict
 
 client = TestClient(app)
+# Tests for the analyze-rag endpoint. Run with 'uv run pytest test_rag_endpoint.py -v'.
 
 class TestAnalyzeRagEndpoint:
     """Test the /analyze-rag endpoint."""
@@ -97,7 +98,7 @@ class TestAnalyzeRagEndpoint:
             "/analyze-rag",
             json={"invalid_field": "test"}
         )
-        assert response.status_code == 422  # Unprocessable Entity
+        assert response.status_code == 422 
     
     def test_rag_endpoint_hello_query(self):
         """Test RAG endpoint with generic query returns empty lists."""

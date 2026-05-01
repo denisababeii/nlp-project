@@ -22,7 +22,7 @@ app = FastAPI(title=APP_TITLE)
 
 
 class AnalyzeRequest(BaseModel):
-    """Request from the browser to the frontend proxy."""
+    """Request from the browser to the frontend."""
 
     backend_url: str = Field(default=DEFAULT_BACKEND_URL)
     question: str = Field(min_length=1)
@@ -31,7 +31,7 @@ class AnalyzeRequest(BaseModel):
 
 
 def endpoint_for_mode(mode: str) -> str:
-    """Return backend endpoint for a frontend mode."""
+    """Return backend endpoint for frontend mode."""
     return "/analyze-rag" if mode == "advanced" else "/analyze"
 
 
