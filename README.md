@@ -446,13 +446,3 @@ Make sure ports `8000` and `8001` are not already in use.
 ├── test_analyze_endpoint.py   # Tests for /analyze
 └── test_rag_endpoint.py       # Tests for /analyze-rag
 ```
-
----
-
-## 13. Notes for contributors
-
-- Do not commit `.env`.
-- Keep the course data path configurable through `COURSES_PATH`.
-- Keep deterministic similarity scores as the source of truth.
-- Use the RAG endpoint for more explanatory answers, but keep the simple endpoint available for faster checks and debugging.
-- When changing response structures, update both the frontend renderer and the tests.
