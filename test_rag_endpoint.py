@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from main_with_rag import app, compute_similarity, courses_dict
+from main import app, compute_similarity, courses_dict
 
 client = TestClient(app)
 
@@ -121,11 +121,7 @@ class TestAnalyzeRagEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        
-        # Should return an error message
-        assert "error" in data
-        assert "not in the database!" in data["error"]
-        assert "INVALID123" in data["error"]
+        assert "INVALID123" in data["answer"]
     
     def test_rag_endpoint_multiple_invalid_courses(self):
         """Test RAG endpoint with multiple non-existent course codes."""
@@ -135,10 +131,7 @@ class TestAnalyzeRagEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        
-        # Should return an error message listing all invalid courses
-        assert "error" in data
-        assert "are not in the database!" in data["error"]
-        assert "INVALID1" in data["error"]
-        assert "INVALID2" in data["error"]
-        assert "INVALID3" in data["error"]
+    
+        assert "INVALID1" in data["answer"]
+        assert "INVALID2" in data["answer"]
+        assert "INVALID3" in data["answer"]

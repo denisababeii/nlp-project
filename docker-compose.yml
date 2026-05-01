@@ -2,9 +2,11 @@ services:
   web:
     build: .
     ports:
+      - "8000:8000"
       - "8001:8001"
     environment:
       - CAMPUSAI_API_KEY
       - CAMPUSAI_API_URL
       - CAMPUSAI_MODEL
       - CAMPUSAI_EMBED_MODEL
+      - COURSES_PATH
