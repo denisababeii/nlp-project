@@ -1,11 +1,4 @@
-"""Minimal FastAPI frontend for the course overlap assistant.
-
-This app provides a small, dependency-light frontend for a backend exposing:
-
-- POST /analyze
-- POST /analyze-rag
-- GET /health
-"""
+#Minimal FastAPI frontend for the course overlap assistant.
 
 from __future__ import annotations
 
@@ -53,7 +46,7 @@ async def post_to_backend(request: AnalyzeRequest) -> tuple[dict[str, Any], floa
     Returns
     -------
     tuple[dict[str, Any], float, int, str]
-        JSON payload, latency in milliseconds, status code, and endpoint path.
+        JSON payload, latency in milliseconds, status code and endpoint path.
 
     Raises
     ------

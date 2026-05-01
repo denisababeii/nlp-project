@@ -126,7 +126,7 @@ class TestRagEndpoint:
             "/analyze",
             json={"invalid_field": "test"}
         )
-        assert response.status_code == 422  # Unprocessable Entity
+        assert response.status_code == 422
     
     def test_rag_endpoint_hello_query(self):
         """Test RAG endpoint with 'Hello' query returns empty lists."""
