@@ -59,12 +59,6 @@ Open the UI in your browser:
 http://127.0.0.1:8000
 ```
 
-Stop the container:
-
-```bash
-docker compose down
-```
-
 ---
 
 ## 4. Run locally without Docker
