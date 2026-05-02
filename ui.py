@@ -1,4 +1,4 @@
-#Minimal FastAPI frontend for the course overlap assistant.
+# FastAPI frontend for the course overlap assistant.
 
 from __future__ import annotations
 
@@ -577,9 +577,6 @@ function renderMetrics(extra) {{
   const parts = [
     `<span class="metric">Endpoint: ${{escapeHtml(extra.endpoint || '—')}}</span>`,
     `<span class="metric">Latency: ${{extra.latency_ms ? extra.latency_ms.toFixed(1) + ' ms' : '—'}}</span>`,
-    `<span class="metric">Requests: ${{metrics.totalRequests}}</span>`,
-    `<span class="metric">Successful: ${{metrics.successfulRequests}}</span>`,
-    `<span class="metric">Failed: ${{metrics.failedRequests}}</span>`
   ];
   return `<div class="metrics">${{parts.join('')}}</div>`;
 }}

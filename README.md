@@ -1,11 +1,11 @@
 # Course Overlap Assistant
 
-A FastAPI-based course overlap assistant that helps students check whether courses overlap in content. The app compares course learning objectives and academic prerequisites, and provides ranked recommendations through either a simple analysis endpoint or a RAG-enhanced endpoint.
+A FastAPI-based course overlap assistant that helps students check whether courses overlap in content. The app compares course learning objectives and academic prerequisites and provides ranked recommendations through either a simple analysis endpoint or a RAG-enhanced endpoint.
 
 The project includes:
 
 - a backend API in `main.py`
-- a lightweight FastAPI frontend in `ui.py`
+- a FastAPI frontend in `ui.py`
 - Docker support through `Dockerfile` and `docker-compose.yml`
 - tests for the simple and RAG endpoints
 - course data loaded from a JSONL file such as `dtu_courses.jsonl`
@@ -36,7 +36,7 @@ Copy the environment template:
 cp .env_template .env
 ```
 
-Open `.env` and add your own CampusAI API key.
+Open `.env` and add your own CampusAI API Key.
 
 ---
 
@@ -98,7 +98,7 @@ The UI has two modes:
 | Mode | Backend endpoint | Description |
 |---|---|---|
 | Simple | `POST /analyze` | Extracts course codes from the question and returns an overlap ranking. |
-| Advanced (RAG) | `POST /analyze-rag` | Retrieves relevant course context first, then uses the LLM to produce a more explanatory answer with evidence. |
+| Advanced (RAG) | `POST /analyze-rag` | Extracts course codes, computes the overlap ranking, then retrieves the exact selected course records so the LLM can generate an explanation. |
 
 The frontend itself exposes:
 
@@ -108,13 +108,13 @@ Serves the browser interface.
 
 ### `POST /api/analyze`
 
-Frontend proxy endpoint. The browser sends requests here, and the frontend forwards them to either `/analyze` or `/analyze-rag` on the backend depending on the selected mode.
+Frontend endpoint. The browser sends requests here, and the frontend forwards them to either `/analyze` or `/analyze-rag` on the backend depending on the selected mode.
 
 Example request:
 
 ```json
 {
-  "question": "I have completed 01002. Should I take 01003 or 01017?",
+  "question": "I have completed 01002. Should I take 01003 or 01004?",
   "mode": "advanced",
   "backend_url": "http://127.0.0.1:8001",
   "timeout_seconds": 60
@@ -133,20 +133,21 @@ The backend expects JSON requests with a single `question` field:
 
 ```json
 {
-  "question": "I have completed 01002. Should I take 01003 or 01017?"
+  "question": "I have completed 01002. Should I take 01003 or 01004?"
 }
 ```
 
 ### `POST /analyze`
 
 Simple overlap analysis.
+
 1. An LLM extracts two lists from the user question:
    - `completed_courses`
    - `compared_courses`
 2. Course codes are normalized.
 3. The API validates that all course codes exist in the course database.
 4. It checks conflicts from the `Not applicable together with` course field.
-5. It computes TF-IDF cosine similarity between the completed course and each compared course.
+5. It gets the TF-IDF cosine similarity between the completed course and each compared course.
 6. It returns a ranked list sorted by similarity.
 
 Similarity is calculated using only:
@@ -159,7 +160,7 @@ Example response:
 ```json
 {
   "completed_courses": ["01002"],
-  "compared_courses": ["01003", "01017"],
+  "compared_courses": ["01003", "01004"],
   "ranking": [
     {
       "course_number": "01003",
@@ -174,17 +175,19 @@ Example response:
 
 ### `POST /analyze-rag`
 
-RAG overlap analysis.
-1. The API retrieves relevant courses using TF-IDF over learning objectives and academic prerequisites.
-2. The LLM extracts completed and compared course codes using only the retrieved context.
-3. Mentioned or extracted course codes are included in a second retrieval pass.
-4. The deterministic TF-IDF similarity ranking is computed.
-5. The LLM receives:
-   - retrieved course context
+RAG-enhanced overlap analysis.
+
+1. The LLM extracts completed and compared course codes from the user question.
+2. Course codes are normalized and validated against the course database.
+3. The API checks conflicts from the `Not applicable together with` course field.
+4. The TF-IDF similarity ranking using learning objectives and academic prerequisites (if present) is retrieved.
+5. The API retrieves the exact selected course records from the course catalogue.
+6. The LLM receives:
+   - retrieved exact course records
    - completed courses
    - compared courses
-   - deterministic similarity scores
-6. The LLM generates an explanatory answer and evidence while keeping the deterministic similarity score as the source.
+   - similarity scores
+7. The LLM generates an explanatory answer.
 
 Example response fields:
 
@@ -223,14 +226,28 @@ Example response:
 {
   "status": "ok",
   "course_count": 1234,
-  "chat_model": "Gemma 3 (Chat)",
+  "chat_model": "Gemma 4",
   "similarity_basis": "learning_objectives + Academic prerequisites"
 }
 ```
 
 ---
 
-## 7. How recommendations are decided
+## 7. What counts as RAG in this project
+
+The advanced endpoint is a lightweight RAG-style system.
+
+In this project, RAG means:
+
+1. **Retrieval**: the backend retrieves the exact selected course records from the course catalogue.
+2. **Augmentation**: those retrieved records are inserted into the LLM prompt as context.
+3. **Generation**: the LLM writes an explanation using the retrieved records and the similarity scores.
+
+The retrieval is not currently an embedding-based vector search or full catalogue search. It is exact course-code retrieval after the LLM has extracted the relevant course codes. The TF-IDF score remains the source of truth and the LLM is used to produce an explanation.
+
+---
+
+## 8. How recommendations are decided
 
 The ranking score is a cosine similarity value between `0.0` and `1.0`.
 
@@ -244,7 +261,7 @@ The score is rounded in the API response.
 
 ---
 
-## 8. Course data
+## 9. Course data
 
 The backend loads course data from the path configured by `COURSES_PATH`.
 
@@ -275,7 +292,7 @@ Course codes are normalized to uppercase strings. The code supports normal DTU f
 
 ---
 
-## 9. Run tests
+## 10. Run tests
 
 Run the full test suite:
 
@@ -283,13 +300,13 @@ Run the full test suite:
 uv run pytest -v
 ```
 
-Run only the `/analyze` endpoint tests:
+Run only the simple `/analyze` endpoint tests:
 
 ```bash
 uv run pytest test_analyze_endpoint.py -v
 ```
 
-Run only the `/analyze-rag` endpoint tests:
+Run only the advanced `/analyze-rag` endpoint tests:
 
 ```bash
 uv run pytest test_rag_endpoint.py -v
@@ -302,18 +319,18 @@ The tests check:
 - invalid courses return an error
 - rankings are sorted by descending similarity
 - recommendation thresholds behave as expected
-- `/analyze-rag` returns RAG-specific fields such as `answer`, `sources`, and `rag` s
+- `/analyze-rag` returns RAG-specific fields such as `answer`, `sources`, and `rag`
 
 ---
 
-## 10. Example requests with curl
+## 11. Example requests with curl
 
 Simple endpoint:
 
 ```bash
 curl -X POST http://127.0.0.1:8001/analyze \
   -H "Content-Type: application/json" \
-  -d '{"question": "I completed 01002. Compare 01003 and 01017."}'
+  -d '{"question": "I completed 01002. Compare 01003 and 01018."}'
 ```
 
 Advanced RAG endpoint:
@@ -321,7 +338,7 @@ Advanced RAG endpoint:
 ```bash
 curl -X POST http://127.0.0.1:8001/analyze-rag \
   -H "Content-Type: application/json" \
-  -d '{"question": "I completed 01002. Compare 01003 and 01017."}'
+  -d '{"question": "I completed 01002. Compare 01003 and 01018."}'
 ```
 
 Health check:
@@ -332,18 +349,18 @@ curl http://127.0.0.1:8001/health
 
 ---
 
-## 11. Project structure
+## 12. Project structure
 
 ```text
 .
 ├── main.py                    # Backend API
 ├── ui.py                      # FastAPI frontend
-├── dtu_courses.jsonl          # Course data
+├── dtu_courses.jsonl          # Course catalogue data
 ├── .env_template              # Environment variable template
 ├── Dockerfile                 # Docker image
 ├── docker-compose.yml         # Docker Compose setup
 ├── pyproject.toml             # Dependencies and project metadata
-├── uv.lock                    # Dependency versions
+├── uv.lock                    # Locked dependency versions
 ├── test_analyze_endpoint.py   # Tests for /analyze
 └── test_rag_endpoint.py       # Tests for /analyze-rag
 ```

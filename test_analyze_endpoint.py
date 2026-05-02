@@ -58,7 +58,7 @@ class TestEndpoint:
         assert isinstance(data["compared_courses"], list)
         assert isinstance(data["ranking"], list)
     
-    def tesT_endpoint_ranking_structure(self):
+    def test_endpoint_ranking_structure(self):
         """Test that ranking items have correct structure."""
         response = client.post(
             "/analyze",
@@ -116,9 +116,7 @@ class TestEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "completed_courses" in data
-        assert "compared_courses" in data
-        assert "ranking" in data
+        assert "The assistant could not identify the courses." in data['error']
     
     def test_endpoint_invalid_json(self):
         """Test endpoint with invalid JSON."""
@@ -138,9 +136,7 @@ class TestEndpoint:
         data = response.json()
         
         # Check for expected empty response structure
-        assert data["completed_courses"] == []
-        assert data["compared_courses"] == []
-        assert data["ranking"] == []
+        assert data["error"] == "The assistant could not identify the courses."
     
     def test_endpoint_01002_01003_query(self):
         """Test endpoint with specific course comparison query."""

@@ -34,16 +34,49 @@ courses_dict: Dict[str, Dict[str, Any]] = {
     if c.get("course_code")
 }
 
+def get_learning_objectives_text(course: Dict[str, Any]) -> str:
+    """Return only the learning objectives as plain text."""
+    learning_objectives = course.get("learning_objectives", []) or []
+    if isinstance(learning_objectives, list):
+        return "\n".join(str(item) for item in learning_objectives if str(item).strip())
+    return str(learning_objectives)
+
+def get_academic_prerequisites_text(course: Dict[str, Any]) -> str:
+    """Return Academic prerequisites when present; otherwise an empty string."""
+    fields = course.get("fields", {}) or {}
+    return str(fields.get("Academic prerequisites", "") or "").strip()
+
+def get_similarity_text(course: Dict[str, Any]) -> str:
+    """
+    Text used for similarity scoring.
+
+    Similarity is based only on:
+    - learning_objectives
+    - fields['Academic prerequisites'] when that field exists
+    """
+    parts = [
+        get_learning_objectives_text(course),
+        get_academic_prerequisites_text(course),
+    ]
+    return "\n".join(part for part in parts if part.strip())
+
+# The vectorizer is fitted once on all courses.
+course_codes = list(courses_dict.keys())
+similarity_documents = [get_similarity_text(courses_dict[code]) for code in course_codes]
+course_code_to_index = {code: index for index, code in enumerate(course_codes)}
+similarity_vectorizer = TfidfVectorizer(stop_words="english")
+similarity_matrix = similarity_vectorizer.fit_transform(similarity_documents)
+
 class Query(BaseModel):
     question: str
 
-## HELPERS
-# Normalize user/model course code output to match database keys.
-def normalize_course_code(code):
+# Helper for normalize_course_codes
+def normalize_course_code(code: Any) -> str:
+    """Normalize user/model course-code output to match database keys."""
     return str(code).strip().upper()
 
-# Keep only unique course codes and normalize them to match keys.
 def normalize_course_codes(codes: List[Any]) -> List[str]:
+    """Keep only unique course codes while preserving order."""
     normalized: List[str] = []
     for code in codes:
         code = normalize_course_code(code)
@@ -51,40 +84,16 @@ def normalize_course_codes(codes: List[Any]) -> List[str]:
             normalized.append(code)
     return normalized
 
-# Find course codes matching the Regex COURSE_CODE_PATTERN.
+# Used for extracting codes from the 'Not applicable with' field
 def extract_course_codes_from_text(text: str) -> List[str]:
+    """Find explicit course codes in free text."""
     return normalize_course_codes(re.findall(COURSE_CODE_PATTERN, text or ""))
 
-# Return only the learning objectives as plain text.
-def get_learning_objectives_text(course: Dict[str, Any]) -> str:
-    learning_objectives = course.get("learning_objectives", []) or []
-    if isinstance(learning_objectives, list):
-        return "\n".join(str(item) for item in learning_objectives if str(item).strip())
-    return str(learning_objectives)
 
-# Return academic prerequisites when present; otherwise an empty string.
-def get_academic_prerequisites_text(course: Dict[str, Any]) -> str:
-    fields = course.get("fields", {}) or {}
-    return str(fields.get("Academic prerequisites", "") or "").strip()
-
-
-# Text used for similarity and RAG retrieval.
-# Similarity is based on:
-# - learning_objectives
-# - fields['Academic prerequisites'] when that field exists
-def get_similarity_text(course: Dict[str, Any]) -> str:
-    parts = [
-        get_learning_objectives_text(course),
-        get_academic_prerequisites_text(course),
-    ]
-    return "\n".join(part for part in parts if part.strip())
-
-# Text shown to the LLM for comparison.
-# The comparison is centered on the same fields used for
-# similarity: learning objectives and academic prerequisites. A small amount of
-# metadata is included so the model can identify the course and mention
-# conflicts when relevant.
 def get_rag_context_text(course: Dict[str, Any]) -> str:
+    """
+    Text shown to the LLM for grounded comparison.
+    """
     fields = course.get("fields", {}) or {}
     context = {
         "course_code": normalize_course_code(course.get("course_code", "")),
@@ -95,50 +104,14 @@ def get_rag_context_text(course: Dict[str, Any]) -> str:
     }
     return json.dumps(context, ensure_ascii=False, indent=2)
 
-# -----------------------------------------------------------------------------
-# RAG index: use learning objectives + Academic prerequisites for similarity.
-# -----------------------------------------------------------------------------
-course_codes = list(courses_dict.keys())
-similarity_documents = [get_similarity_text(courses_dict[code]) for code in course_codes]
-
-# TfidfVectorizer fails if every document is empty. This fallback should rarely be
-# needed, but keeps the API from crashing on incomplete data.
-if any(doc.strip() for doc in similarity_documents):
-    rag_vectorizer = TfidfVectorizer(stop_words="english")
-    rag_matrix = rag_vectorizer.fit_transform(similarity_documents)
-else:
-    rag_vectorizer = TfidfVectorizer(stop_words=None)
-    rag_matrix = rag_vectorizer.fit_transform([code for code in course_codes])
-
-
-# Text shown to the LLM for comparison.
-# The comparison is centered on the same fields used for
-# similarity: learning objectives and academic prerequisites. A small amount of
-# metadata is included so the model can identify the course and mention
-# conflicts when relevant.
-def retrieve_relevant_courses(question: str, top_k: int = 12, required_course_codes: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-
-    required = normalize_course_codes(required_course_codes or [])
-    exact_codes = [code for code in extract_course_codes_from_text(question) if code in courses_dict]
-
-    query_vector = rag_vectorizer.transform([question])
-    scores = cosine_similarity(query_vector, rag_matrix).flatten()
-    ranked_indexes = scores.argsort()[::-1]
-
-    selected_codes: List[str] = []
-    for code in exact_codes + required:
-        if code in courses_dict and code not in selected_codes:
-            selected_codes.append(code)
-
-    for idx in ranked_indexes:
-        code = course_codes[int(idx)]
-        if code not in selected_codes:
-            selected_codes.append(code)
-        if len(selected_codes) >= top_k:
-            break
-
+# Retrieve exact course records by course code.
+# This is used by /analyze-rag after the LLM has extracted course codes.
+# The final explanation is grounded in the retrieved course records.
+def retrieve_courses_by_codes(course_codes_to_retrieve: List[str]) -> List[Dict[str, Any]]:
     retrieved: List[Dict[str, Any]] = []
-    for code in selected_codes:
+    for code in course_codes_to_retrieve:
+        if code not in courses_dict:
+            continue
         course = courses_dict[code]
         retrieved.append(
             {
@@ -153,15 +126,15 @@ def retrieve_relevant_courses(question: str, top_k: int = 12, required_course_co
         )
     return retrieved
 
-# Compress retrieved courses into context that can be passed to the LLM.
 def format_courses_for_context(courses: List[Dict[str, Any]]) -> str:
+    """Compress retrieved courses into context that can be passed to the LLM."""
     blocks = []
     for i, course in enumerate(courses, start=1):
         blocks.append(f"[Source {i}]\n{course['context']}")
     return "\n\n---\n\n".join(blocks)
 
-# Simple approach used by /analyze.
 def ask_llm_for_course_lists(question: str) -> Dict[str, List[str]]:
+    """Original extraction approach used by /analyze."""
     sys_prompt = (
         "Extract the completed courses and the list of courses to compare from "
         "the following user query. Output ONLY a JSON object with two keys: "
@@ -189,59 +162,33 @@ def ask_llm_for_course_lists(question: str) -> Dict[str, List[str]]:
         "compared_courses": normalize_course_codes(data.get("compared_courses", []) or []),
     }
 
-# RAG extraction: retrieve relevant catalogue entries, then ask the LLM.
-def ask_llm_for_course_lists_with_rag(question: str, retrieved_courses: List[Dict[str, Any]]) -> Dict[str, List[str]]:
-    context = format_courses_for_context(retrieved_courses)
-    sys_prompt = (
-        "You extract course codes from a user's question using ONLY the retrieved "
-        "course catalogue context. Output ONLY a JSON object with two keys: "
-        "'completed_courses' and 'compared_courses'. Both values must be lists "
-        "of valid course codes from the context. Course codes can be 5 digits, "
-        "such as 02105, or alphanumeric, such as KU322. Do not invent course codes. "
-        "If the user clearly says they have already taken, passed, completed, or "
-        "studied a course, place it in completed_courses. If the user asks whether "
-        "they should take, compare, skip, or evaluate courses, place those in "
-        "compared_courses."
-    )
 
-    try:
-        response = client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": f"Retrieved course context:\n{context}\n\nUser question:\n{question}"},
-            ],
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(response.choices[0].message.content)
-    except Exception:
-        data = {"completed_courses": [], "compared_courses": []}
-
-    return {
-        "completed_courses": normalize_course_codes(data.get("completed_courses", []) or []),
-        "compared_courses": normalize_course_codes(data.get("compared_courses", []) or []),
-    }
-
-# Compute overlap using learning objectives and academic prerequisites.
 def compute_similarity(course1_id: str, course2_id: str) -> float:
+    """
+    Compute overlap using catalogue-wide TF-IDF vectors.
+
+    The TF-IDF vectorizer is fitted once on all courses at startup, using:
+    - learning_objectives
+    - fields['Academic prerequisites'] when that field exists
+    """
     course1_id = normalize_course_code(course1_id)
     course2_id = normalize_course_code(course2_id)
 
-    if course1_id not in courses_dict or course2_id not in courses_dict:
+    if course1_id not in course_code_to_index or course2_id not in course_code_to_index:
         return 0.0
 
-    text1 = get_similarity_text(courses_dict[course1_id])
-    text2 = get_similarity_text(courses_dict[course2_id])
+    idx1 = course_code_to_index[course1_id]
+    idx2 = course_code_to_index[course2_id]
 
-    if not text1.strip() or not text2.strip():
-        return 0.0
+    return float(
+        cosine_similarity(
+            similarity_matrix[idx1:idx1 + 1],
+            similarity_matrix[idx2:idx2 + 1],
+        )[0][0]
+    )
 
-    vectorizer = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = vectorizer.fit_transform([text1, text2])
-    return float(cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0])
-
-# Check if provided courses are present in the database
 def validate_courses(completed_courses: List[str], compared_courses: List[str]) -> Optional[Dict[str, Any]]:
+    """Check if the courses are in the database."""
     invalid_courses = []
     for course_code in completed_courses + compared_courses:
         if course_code and course_code not in courses_dict:
@@ -255,12 +202,14 @@ def validate_courses(completed_courses: List[str], compared_courses: List[str]) 
 
     return None
 
-# Parse DTU's 'Not applicable together with' field.
+
 def parse_conflicting_codes(not_applicable: str) -> List[str]:
+    """Parse DTU's 'Not applicable together with' field robustly."""
     return extract_course_codes_from_text(not_applicable or "")
 
-# Check completed courses against compared courses.
+
 def check_not_applicable_conflicts(completed_courses: List[str], compared_courses: List[str]) -> Optional[Dict[str, Any]]:
+    """Check completed courses against compared courses."""
     for completed_course in completed_courses:
         fields = courses_dict.get(completed_course, {}).get("fields", {}) or {}
         conflicting_codes = parse_conflicting_codes(fields.get("Not applicable together with", ""))
@@ -270,8 +219,7 @@ def check_not_applicable_conflicts(completed_courses: List[str], compared_course
                 return {
                     "error": f"The course {compared_course} is not applicable with course {completed_course} (as mentioned in the course description)."
                 }
-
-    # Check compared courses against completed courses.
+    # Both directions
     for compared_course in compared_courses:
         fields = courses_dict.get(compared_course, {}).get("fields", {}) or {}
         conflicting_codes = parse_conflicting_codes(fields.get("Not applicable together with", ""))
@@ -284,8 +232,9 @@ def check_not_applicable_conflicts(completed_courses: List[str], compared_course
 
     return None
 
-# Retrun recommendation text form the computed similarity.
+
 def recommendation_from_similarity(similarity: float) -> str:
+    """Get recommendation text based on score."""
     rec = "Low overlap — safe to take alongside."
     if similarity > 0.6:
         rec = "High overlap — consider skipping or auditing only."
@@ -293,16 +242,18 @@ def recommendation_from_similarity(similarity: float) -> str:
         rec = "Moderate overlap — complementary but some shared content."
     return rec
 
-# Retrun overlap level form the computed similarity.
+
 def overlap_level_from_similarity(similarity: float) -> str:
+    """Get overlap level based on score."""
     if similarity > 0.6:
         return "high"
     if similarity > 0.3:
         return "moderate"
     return "low"
 
-# Compute ranking of courses to compare
+
 def build_ranking(completed_courses: List[str], compared_courses: List[str]) -> List[Dict[str, Any]]:
+    '''Build a descending sorted ranking of compared courses.'''
     results: List[Dict[str, Any]] = []
     base_course = completed_courses[0] if completed_courses else ""
 
@@ -322,17 +273,20 @@ def build_ranking(completed_courses: List[str], compared_courses: List[str]) -> 
     return results
 
 
-# RAG generation step for the comparison.
-# The LLM receives the source context and the deterministic similarity
-# scores. It should explain the comparison based on learning objectives and
-# academic prerequisites, not unrelated fields.
 def ask_llm_for_rag_comparison(
     question: str,
     completed_courses: List[str],
     compared_courses: List[str],
     retrieved_courses: List[Dict[str, Any]],
-    deterministic_ranking: List[Dict[str, Any]],
+    ranking: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    """
+    RAG generation step for the actual comparison.
+
+    The LLM receives retrieved source context and the similarity
+    scores. It should explain the comparison based on learning objectives and
+    Academic prerequisites, not unrelated fields.
+    """
     context = format_courses_for_context(retrieved_courses)
     sys_prompt = """
 You are a course advisor using Retrieval-Augmented Generation.
@@ -360,7 +314,7 @@ Compared courses:
 {json.dumps(compared_courses, ensure_ascii=False)}
 
 Similarity ranking computed from learning objectives + Academic prerequisites:
-{json.dumps(deterministic_ranking, ensure_ascii=False, indent=2)}
+{json.dumps(ranking, ensure_ascii=False, indent=2)}
 
 Retrieved course sources:
 {context}
@@ -379,15 +333,15 @@ Retrieved course sources:
     except Exception as exc:
         return {
             "answer": (
-                "RAG comparison generation failed, so this response uses the deterministic "
+                "RAG comparison generation failed, so this response uses the "
                 "similarity ranking computed from learning objectives and Academic prerequisites. "
                 f"Error: {type(exc).__name__}"
             ),
-            "ranking": deterministic_ranking,
+            "ranking": ranking,
         }
 
-    # Keep the deterministic score as source of truth even if the model changes it.
-    ranking_by_code = {item["course_number"]: item for item in deterministic_ranking}
+    # Keep the similarity score as source of truth even if the model changes it.
+    ranking_by_code = {item["course_number"]: item for item in ranking}
     model_ranking = parsed.get("ranking", []) if isinstance(parsed.get("ranking", []), list) else []
     final_ranking: List[Dict[str, Any]] = []
 
@@ -397,16 +351,10 @@ Retrieved course sources:
             continue
         base_item = dict(ranking_by_code[code])
         base_item["evidence"] = model_item.get("evidence", []) or []
-        # Keep deterministic recommendation unless the model provides a string and you prefer to expose it.
+        # Keep similarity scroe unless the model provides a reply.
         if isinstance(model_item.get("recommendation"), str) and model_item.get("recommendation").strip():
             base_item["rag_recommendation"] = model_item["recommendation"]
         final_ranking.append(base_item)
-
-    # Ensure no compared course disappears if the model omits it.
-    included = {item["course_number"] for item in final_ranking}
-    for item in deterministic_ranking:
-        if item["course_number"] not in included:
-            final_ranking.append(item)
 
     final_ranking.sort(key=lambda x: x["similarity"], reverse=True)
 
@@ -415,14 +363,11 @@ Retrieved course sources:
         "ranking": final_ranking,
     }
 
-# Analyze courses for the simple endpoint
+
 def analyze_courses(
     completed_courses: List[str],
-    compared_courses: List[str],
-    extra_response: Optional[Dict[str, Any]] = None,
+    compared_courses: List[str]
 ) -> Dict[str, Any]:
-    completed_courses = normalize_course_codes(completed_courses)
-    compared_courses = normalize_course_codes(compared_courses)
 
     validation_error = validate_courses(completed_courses, compared_courses)
     if validation_error:
@@ -437,47 +382,48 @@ def analyze_courses(
         "compared_courses": compared_courses,
         "ranking": build_ranking(completed_courses, compared_courses),
     }
-
-    if extra_response:
-        response.update(extra_response)
-
+    
     return response
 
-# Simple overlap analysis.
-# 1. An LLM extracts two lists from the user question:
-#    - `completed_courses`
-#    - `compared_courses`
-# 2. Course codes are normalized.
-# 3. The API validates that all course codes exist in the course database.
-# 4. It checks conflicts from the `Not applicable together with` course field.
-# 5. It computes TF-IDF cosine similarity between the completed course and each compared course.
-# 6. It returns a ranked list sorted by similarity.
 
-# Similarity is calculated using only:
-
-# - `learning_objectives`
-# - `fields["Academic prerequisites"]`, when available
 @app.post("/analyze")
 def analyze_endpoint(query: Query):
     extracted = ask_llm_for_course_lists(query.question)
+    # In case the LLM did not identify any courses, return error message.
+    if not extracted["completed_courses"] and not extracted["compared_courses"]:
+        return {
+            "error": f"The assistant could not identify the courses."
+        }
     return analyze_courses(
         extracted["completed_courses"],
         extracted["compared_courses"],
     )
 
-# RAG version of /analyze.
-# 1. Retrieve relevant course records using learning objectives + academic prerequisites.
-# 2. Extract the completed and compared course codes with retrieved context.
-# 3. Force-include the mentioned courses in a second retrieval pass.
-# 4. Compute similarity from learning objectives + academic prerequisites.
-# 5. Ask the LLM to explain the comparison using only retrieved RAG context.
+
 @app.post("/analyze-rag")
 def analyze_rag_endpoint(query: Query):
-    initial_retrieved = retrieve_relevant_courses(query.question, top_k=12)
-    extracted = ask_llm_for_course_lists_with_rag(query.question, initial_retrieved)
+    """
+    RAG version of /analyze.
 
-    completed_courses = normalize_course_codes(extracted["completed_courses"])
-    compared_courses = normalize_course_codes(extracted["compared_courses"])
+    1. The LLM extracts completed and compared course codes from the question.
+    2. Course codes are normalized and validated against the course database.
+    3. The API checks conflicts from the `Not applicable together with` course field.
+    4. A TF-IDF similarity ranking is computed from learning objectives
+       and academic prerequisites.
+    5. The exact extracted course records are retrieved from the course database.
+    6. The LLM explains the ranking using only those retrieved records.
+    """
+    extracted = ask_llm_for_course_lists(query.question)
+
+    completed_courses = extracted["completed_courses"]
+    compared_courses = extracted["compared_courses"]
+
+    # If the LLM did not identify any courses, avoid a second LLM call and return
+    # the same empty structure expected by the frontend/tests.
+    if not completed_courses and not compared_courses:
+        return {
+            "error": f"The assistant could not identify the courses."
+        }
 
     validation_error = validate_courses(completed_courses, compared_courses)
     if validation_error:
@@ -487,20 +433,18 @@ def analyze_rag_endpoint(query: Query):
     if conflict_error:
         return conflict_error
 
-    mentioned_codes = completed_courses + compared_courses
-    retrieved_courses = retrieve_relevant_courses(
-        query.question,
-        top_k=12,
-        required_course_codes=mentioned_codes,
-    )
+    ranking = build_ranking(completed_courses, compared_courses)
 
-    deterministic_ranking = build_ranking(completed_courses, compared_courses)
+    # This is the retrieval step used for RAG generation: retrieve the exact
+    # records that the LLM identified, then ground the explanation in those records.
+    retrieved_courses = retrieve_courses_by_codes(completed_courses + compared_courses)
+
     rag_comparison = ask_llm_for_rag_comparison(
         question=query.question,
         completed_courses=completed_courses,
         compared_courses=compared_courses,
         retrieved_courses=retrieved_courses,
-        deterministic_ranking=deterministic_ranking,
+        ranking=ranking,
     )
 
     return {
@@ -519,9 +463,9 @@ def analyze_rag_endpoint(query: Query):
         ],
         "rag": {
             "retrieved_course_codes": [course["course_code"] for course in retrieved_courses],
-            "retrieval_method": "TF-IDF over learning objectives + Academic prerequisites",
+            "retrieval_method": "Exact course-code retrieval after LLM extraction",
             "similarity_basis": "learning_objectives + Academic prerequisites",
-            "deterministic_similarity_ranking": deterministic_ranking,
+            "similarity_ranking": ranking,
         },
     }
 
@@ -538,4 +482,5 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8001)

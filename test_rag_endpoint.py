@@ -35,7 +35,7 @@ class TestAnalyzeRagEndpoint:
         # Make sure "rag" metadata has right keys
         assert "retrieved_course_codes" in data["rag"]
         assert isinstance(data["rag"]["retrieved_course_codes"], list)
-        assert "deterministic_similarity_ranking" in data["rag"]
+        assert "similarity_ranking" in data["rag"]
     
     def test_rag_endpoint_ranking_structure(self):
         """Test that ranking items have correct structure and RAG specific fields."""
@@ -110,9 +110,7 @@ class TestAnalyzeRagEndpoint:
         data = response.json()
         
         # Check for expected empty response structure
-        assert data["completed_courses"] == []
-        assert data["compared_courses"] == []
-        assert data["ranking"] == []
+        assert data["error"] == "The assistant could not identify the courses."
     
     def test_rag_endpoint_invalid_course(self):
         """Test RAG endpoint with non-existent course code."""
@@ -122,7 +120,7 @@ class TestAnalyzeRagEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "INVALID123" in data["answer"]
+        assert "INVALID123" in data["error"]
     
     def test_rag_endpoint_multiple_invalid_courses(self):
         """Test RAG endpoint with multiple non-existent course codes."""
@@ -133,6 +131,6 @@ class TestAnalyzeRagEndpoint:
         assert response.status_code == 200
         data = response.json()
     
-        assert "INVALID1" in data["answer"]
-        assert "INVALID2" in data["answer"]
-        assert "INVALID3" in data["answer"]
+        assert "INVALID1" in data["error"]
+        assert "INVALID2" in data["error"]
+        assert "INVALID3" in data["error"]

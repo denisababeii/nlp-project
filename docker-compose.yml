@@ -8,5 +8,4 @@ services:
       - CAMPUSAI_API_KEY
       - CAMPUSAI_API_URL
       - CAMPUSAI_MODEL
-      - CAMPUSAI_EMBED_MODEL
       - COURSES_PATH
